@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Calendar, Users, CheckCircle, XCircle, LogOut, Settings, X } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Calendar, Users, CheckCircle, XCircle, LogOut, Settings, X, MessageSquare, Send } from 'lucide-react';
 
 const DayOffCalendar = () => {
   const [currentUser, setCurrentUser] = useState(null);
@@ -68,7 +68,6 @@ const DayOffCalendar = () => {
   };
 
   // --- HELPER FUNCTION ---
-  // Accepts a specific year argument instead of assuming current year
   const getUsedDaysForYear = (username, year) => {
     return requests.filter(r => 
       r.username === username && 
@@ -96,31 +95,20 @@ const DayOffCalendar = () => {
     if (!currentUser || users[currentUser].isAdmin) return;
 
     const dateStr = date.toISOString().split('T')[0];
-    // Get the year of the CLICKED date, not the current real-time year
     const targetYear = date.getFullYear();
-
     const existing = requests.find(r => r.username === currentUser && r.date === dateStr);
     
     if (existing) {
-      if (existing.status === 'pending') {
-        setModal({ 
-          show: true, 
-          type: 'cancelRequest', 
-          data: { requestId: existing.id, date: dateStr } 
-        });
-      } else if (existing.status === 'approved') {
-        setModal({ 
-          show: true, 
-          type: 'error', 
-          data: { message: 'This day has already been approved. Contact an admin to modify it.' } 
-        });
-      }
+      // If user clicks a day they already requested, show details/comments instead of blocking
+      setModal({ 
+        show: true, 
+        type: 'requestComments', 
+        data: { requestId: existing.id } 
+      });
       return;
     }
 
     const user = users[currentUser];
-    
-    // Check usage for the TARGET year (the year of the date clicked)
     const usedInTargetYear = getUsedDaysForYear(currentUser, targetYear);
 
     if (usedInTargetYear >= user.allowance) {
@@ -153,7 +141,8 @@ const DayOffCalendar = () => {
       username: currentUser,
       date: date,
       status: 'pending',
-      requestedAt: new Date().toISOString()
+      requestedAt: new Date().toISOString(),
+      comments: [] // Initialize comments array
     };
 
     saveRequests([...requests, newRequest]);
@@ -179,6 +168,29 @@ const DayOffCalendar = () => {
       return r;
     });
 
+    saveRequests(updatedRequests);
+  };
+
+  // --- NEW: Add Comment Function ---
+  const addComment = (requestId, text) => {
+    if (!text.trim()) return;
+    
+    const updatedRequests = requests.map(r => {
+      if (r.id === requestId) {
+        const newComment = {
+          id: Date.now(),
+          author: currentUser,
+          text: text,
+          timestamp: new Date().toISOString()
+        };
+        return { 
+          ...r, 
+          comments: r.comments ? [...r.comments, newComment] : [newComment] 
+        };
+      }
+      return r;
+    });
+    
     saveRequests(updatedRequests);
   };
 
@@ -326,7 +338,21 @@ const DayOffCalendar = () => {
   };
 
   const Modal = () => {
+    const [commentText, setCommentText] = useState('');
+    const commentsEndRef = useRef(null);
+
+    // Scroll to bottom of comments when modal opens or comments change
+    useEffect(() => {
+        if (modal.type === 'requestComments' && commentsEndRef.current) {
+            commentsEndRef.current.scrollIntoView({ behavior: "smooth" });
+        }
+    }, [modal.type, requests]);
+
     if (!modal.show) return null;
+
+    const currentRequest = modal.data?.requestId 
+      ? requests.find(r => r.id === modal.data.requestId) 
+      : null;
 
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -336,6 +362,7 @@ const DayOffCalendar = () => {
               {modal.type === 'requestDay' && 'Request Day Off'}
               {modal.type === 'cancelRequest' && 'Cancel Request'}
               {modal.type === 'confirmDeleteUser' && 'Delete User'}
+              {modal.type === 'requestComments' && 'Request Details & Comments'}
               {modal.type === 'error' && 'Notice'}
               {modal.type === 'success' && 'Success'}
             </h3>
@@ -388,6 +415,73 @@ const DayOffCalendar = () => {
                 </button>
               </div>
             </>
+          )}
+
+          {/* COMMENTS MODAL */}
+          {modal.type === 'requestComments' && currentRequest && (
+            <div className="flex flex-col h-96">
+                <div className="mb-4 p-3 bg-gray-50 rounded border border-gray-200">
+                    <div className="flex justify-between items-center mb-1">
+                        <span className="font-bold">{currentRequest.date}</span>
+                        <span className={`text-xs px-2 py-1 rounded capitalize ${
+                            currentRequest.status === 'approved' ? 'bg-green-100 text-green-800' :
+                            currentRequest.status === 'rejected' ? 'bg-red-100 text-red-800' :
+                            'bg-yellow-100 text-yellow-800'
+                        }`}>
+                            {currentRequest.status}
+                        </span>
+                    </div>
+                    <div className="text-xs text-gray-500">
+                        Requested by {currentRequest.username} on {formatDateTime(currentRequest.requestedAt)}
+                    </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto mb-4 border rounded p-2 bg-gray-50 space-y-3">
+                    {(!currentRequest.comments || currentRequest.comments.length === 0) && (
+                        <p className="text-center text-gray-500 text-sm mt-4">No comments yet.</p>
+                    )}
+                    {currentRequest.comments?.map(comment => (
+                        <div key={comment.id} className={`flex flex-col ${
+                            comment.author === currentUser ? 'items-end' : 'items-start'
+                        }`}>
+                            <div className={`max-w-[85%] rounded-lg p-2 text-sm ${
+                                comment.author === currentUser 
+                                    ? 'bg-indigo-100 text-indigo-900 rounded-tr-none' 
+                                    : 'bg-white border border-gray-200 rounded-tl-none'
+                            }`}>
+                                <p className="font-semibold text-xs mb-1 text-opacity-75">
+                                    {comment.author}
+                                </p>
+                                <p>{comment.text}</p>
+                            </div>
+                            <span className="text-[10px] text-gray-400 mt-1">
+                                {formatDateTime(comment.timestamp)}
+                            </span>
+                        </div>
+                    ))}
+                    <div ref={commentsEndRef} />
+                </div>
+
+                <div className="flex gap-2">
+                    <input
+                        type="text"
+                        value={commentText}
+                        onChange={(e) => setCommentText(e.target.value)}
+                        onKeyPress={(e) => e.key === 'Enter' && addComment(currentRequest.id, commentText) && setCommentText('')}
+                        placeholder="Type a comment..."
+                        className="flex-1 px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                    <button
+                        onClick={() => {
+                            addComment(currentRequest.id, commentText);
+                            setCommentText('');
+                        }}
+                        className="p-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition-colors"
+                    >
+                        <Send className="w-4 h-4" />
+                    </button>
+                </div>
+            </div>
           )}
 
           {modal.type === 'confirmDeleteUser' && (
@@ -518,7 +612,6 @@ const DayOffCalendar = () => {
                 </p>
                 {!isAdmin && (
                   <p className="text-sm text-gray-600 mt-1">
-                    {/* Display usage for the current year to inform status */}
                     Days used ({new Date().getFullYear()}): {getUsedDaysForYear(currentUser, new Date().getFullYear())} / {userStats.allowance || 0}
                   </p>
                 )}
@@ -555,10 +648,20 @@ const DayOffCalendar = () => {
                       : 'bg-red-100 border border-red-300'
                   }`}
                 >
-                  <p className="text-sm">
-                    Your request for <strong>{notif.date}</strong> has been{' '}
-                    <strong>{notif.status}</strong>
-                  </p>
+                  <div className="flex justify-between items-center">
+                      <p className="text-sm">
+                        Your request for <strong>{notif.date}</strong> has been{' '}
+                        <strong>{notif.status}</strong>
+                      </p>
+                      {/* COMMENT BUTTON FOR NOTIFICATIONS */}
+                      <button
+                        onClick={() => setModal({ show: true, type: 'requestComments', data: { requestId: notif.id } })}
+                        className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-full transition-colors"
+                        title="View Comments"
+                      >
+                        <MessageSquare className="w-4 h-4" />
+                      </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -577,19 +680,28 @@ const DayOffCalendar = () => {
                       <p className="font-semibold">{request.date}</p>
                       <p className="text-sm text-gray-600">Awaiting approval</p>
                     </div>
-                    <button
-                      onClick={() => deletePendingRequest(request.id)}
-                      className="px-3 py-1 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-sm"
-                    >
-                      Cancel
-                    </button>
+                    <div className="flex items-center gap-2">
+                        {/* COMMENT BUTTON FOR USER PENDING */}
+                        <button
+                          onClick={() => setModal({ show: true, type: 'requestComments', data: { requestId: request.id } })}
+                          className="p-2 text-gray-600 hover:bg-yellow-100 rounded-full transition-colors"
+                          title="Comments"
+                        >
+                          <MessageSquare className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => deletePendingRequest(request.id)}
+                          className="px-3 py-1 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-sm"
+                        >
+                          Cancel
+                        </button>
+                    </div>
                   </div>
                 ))}
               </div>
             </div>
           )}
 
-          {/* Change Password Section */}
           <div className="mt-4">
             <h3 className="text-lg font-semibold mb-2">Change Password</h3>
             <div className="space-y-2">
@@ -645,7 +757,15 @@ const DayOffCalendar = () => {
                           <p className="text-sm text-gray-600">Date: {request.date}</p>
                           <p className="text-xs text-gray-500">Requested: {formatDateTime(request.requestedAt)}</p>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 items-center">
+                          {/* COMMENT BUTTON FOR ADMIN PENDING */}
+                          <button
+                            onClick={() => setModal({ show: true, type: 'requestComments', data: { requestId: request.id } })}
+                            className="p-2 text-gray-600 hover:bg-yellow-100 rounded-full transition-colors"
+                            title="Comments"
+                          >
+                            <MessageSquare className="w-5 h-5" />
+                          </button>
                           <button
                             onClick={() => approveRequest(request.id, true)}
                             className="p-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors"
@@ -741,7 +861,6 @@ const DayOffCalendar = () => {
                           </p>
                           {!user.isAdmin && (
                             <p className="text-sm text-gray-600">
-                              {/* Show usage for current year for admin view */}
                               Used ({new Date().getFullYear()}): {getUsedDaysForYear(username, new Date().getFullYear())} / Allowance: {user.allowance}
                             </p>
                           )}
@@ -764,7 +883,6 @@ const DayOffCalendar = () => {
                         </div>
                       </div>
                       
-                      {/* User's request history - only show for non-admin users */}
                       {!user.isAdmin && requests.filter(r => r.username === username && r.status !== 'pending').length > 0 && (
                         <div className="mt-2 pt-2 border-t border-gray-300">
                           <p className="text-xs font-semibold text-gray-700 mb-1">Request History:</p>
@@ -785,7 +903,16 @@ const DayOffCalendar = () => {
                                       }`}>
                                         {req.status}
                                       </span>
-                                      {/* ADDED: UNAPPROVE / RE-APPROVE BUTTONS */}
+                                      
+                                      {/* COMMENT BUTTON FOR ADMIN HISTORY */}
+                                      <button
+                                        onClick={() => setModal({ show: true, type: 'requestComments', data: { requestId: req.id } })}
+                                        className="p-1 text-gray-500 hover:bg-gray-200 rounded-full transition-colors"
+                                        title="Comments"
+                                      >
+                                        <MessageSquare className="w-3 h-3" />
+                                      </button>
+
                                       {req.status === 'approved' && (
                                         <button
                                           onClick={() => approveRequest(req.id, false)}
