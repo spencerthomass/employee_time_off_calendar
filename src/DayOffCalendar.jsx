@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Calendar, Users, CheckCircle, XCircle, LogOut, Settings, X, MessageSquare, Send } from 'lucide-react';
+import { Calendar, Users, CheckCircle, XCircle, LogOut, Settings, X, MessageSquare, Send, Key } from 'lucide-react';
 
 const DayOffCalendar = () => {
   const [currentUser, setCurrentUser] = useState(null);
@@ -99,7 +99,6 @@ const DayOffCalendar = () => {
     const existing = requests.find(r => r.username === currentUser && r.date === dateStr);
     
     if (existing) {
-      // If user clicks a day they already requested, show details/comments instead of blocking
       setModal({ 
         show: true, 
         type: 'requestComments', 
@@ -142,7 +141,7 @@ const DayOffCalendar = () => {
       date: date,
       status: 'pending',
       requestedAt: new Date().toISOString(),
-      comments: [] // Initialize comments array
+      comments: []
     };
 
     saveRequests([...requests, newRequest]);
@@ -171,7 +170,6 @@ const DayOffCalendar = () => {
     saveRequests(updatedRequests);
   };
 
-  // --- NEW: Add Comment Function ---
   const addComment = (requestId, text) => {
     if (!text.trim()) return;
     
@@ -235,6 +233,20 @@ const DayOffCalendar = () => {
     saveRequests(updatedRequests);
     
     setModal({ show: false, type: '', data: null });
+  };
+
+  // --- NEW: Admin Password Reset Logic ---
+  const performAdminPasswordReset = (targetUsername, newPassword) => {
+    if (!newPassword || newPassword.length < 4) {
+      // We handle this validation inside the Modal mostly, but safety check here
+      return;
+    }
+    const updatedUsers = {
+      ...users,
+      [targetUsername]: { ...users[targetUsername], password: newPassword }
+    };
+    saveUsers(updatedUsers);
+    setModal({ show: true, type: 'success', data: { message: `Password for ${targetUsername} has been updated.` } });
   };
 
   const updateUserAllowance = (username, newAllowance) => {
@@ -339,6 +351,7 @@ const DayOffCalendar = () => {
 
   const Modal = () => {
     const [commentText, setCommentText] = useState('');
+    const [adminNewPass, setAdminNewPass] = useState(''); // State for admin reset input
     const commentsEndRef = useRef(null);
 
     // Scroll to bottom of comments when modal opens or comments change
@@ -362,6 +375,7 @@ const DayOffCalendar = () => {
               {modal.type === 'requestDay' && 'Request Day Off'}
               {modal.type === 'cancelRequest' && 'Cancel Request'}
               {modal.type === 'confirmDeleteUser' && 'Delete User'}
+              {modal.type === 'adminResetPassword' && 'Reset User Password'}
               {modal.type === 'requestComments' && 'Request Details & Comments'}
               {modal.type === 'error' && 'Notice'}
               {modal.type === 'success' && 'Success'}
@@ -412,6 +426,37 @@ const DayOffCalendar = () => {
                   className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
                 >
                   Cancel Request
+                </button>
+              </div>
+            </>
+          )}
+
+          {/* ADMIN RESET PASSWORD MODAL */}
+          {modal.type === 'adminResetPassword' && (
+            <>
+              <p className="mb-4">
+                Enter a new password for user <strong>{modal.data.username}</strong>:
+              </p>
+              <input 
+                type="password" 
+                placeholder="New Password"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg mb-4 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                value={adminNewPass}
+                onChange={(e) => setAdminNewPass(e.target.value)}
+              />
+              <div className="flex gap-2 justify-end">
+                <button
+                  onClick={() => setModal({ show: false, type: '', data: null })}
+                  className="px-4 py-2 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => performAdminPasswordReset(modal.data.username, adminNewPass)}
+                  disabled={adminNewPass.length < 4}
+                  className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50"
+                >
+                  Save Password
                 </button>
               </div>
             </>
@@ -874,6 +919,16 @@ const DayOffCalendar = () => {
                               className="w-20 px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500"
                             />
                           )}
+                          
+                          {/* NEW: RESET PASSWORD BUTTON */}
+                          <button
+                            onClick={() => setModal({ show: true, type: 'adminResetPassword', data: { username } })}
+                            className="px-2 py-1 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition-colors text-sm flex items-center gap-1"
+                            title="Reset Password"
+                          >
+                            <Key className="w-3 h-3" />
+                          </button>
+
                           <button
                             onClick={() => deleteUser(username)}
                             className="px-3 py-1 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-sm"
