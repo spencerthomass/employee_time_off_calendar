@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Calendar, Users, CheckCircle, XCircle, LogOut, Settings, X, MessageSquare, Send, Key } from 'lucide-react';
+import { Calendar, Users, CheckCircle, XCircle, LogOut, Settings, X, MessageSquare, Send, Key, Edit2, Save } from 'lucide-react';
 
 const DayOffCalendar = () => {
   const [currentUser, setCurrentUser] = useState(null);
@@ -9,13 +9,26 @@ const DayOffCalendar = () => {
   const [requests, setRequests] = useState([]);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [showAdmin, setShowAdmin] = useState(false);
-  const [newUser, setNewUser] = useState({ username: '', password: '', allowance: 10, isAdmin: false });
+  
+  // Updated newUser state to include displayName
+  const [newUser, setNewUser] = useState({ username: '', displayName: '', password: '', allowance: 10, isAdmin: false });
+  
   const [modal, setModal] = useState({ show: false, type: '', data: null });
   const [passwordChange, setPasswordChange] = useState({ current: '', new: '', confirm: '' });
+  
+  // New state for changing own display name
+  const [myDisplayName, setMyDisplayName] = useState('');
 
   useEffect(() => {
     loadData();
   }, []);
+
+  // When user logs in, initialize their display name input
+  useEffect(() => {
+    if (currentUser && users[currentUser]) {
+      setMyDisplayName(users[currentUser].displayName || currentUser);
+    }
+  }, [currentUser, users]);
 
   const loadData = async () => {
     try {
@@ -27,10 +40,17 @@ const DayOffCalendar = () => {
       const requestsResult = await reqRes.json();
       
       if (usersResult && usersResult.value) {
-        setUsers(JSON.parse(usersResult.value));
+        const loadedUsers = JSON.parse(usersResult.value);
+        // Data Migration: Ensure all users have a displayName
+        Object.keys(loadedUsers).forEach(key => {
+            if (!loadedUsers[key].displayName) {
+                loadedUsers[key].displayName = key;
+            }
+        });
+        setUsers(loadedUsers);
       } else {
         const initialUsers = {
-          admin: { password: 'admin', isAdmin: true, allowance: 0, used: 0 }
+          admin: { password: 'admin', displayName: 'Administrator', isAdmin: true, allowance: 0, used: 0 }
         };
         setUsers(initialUsers);
         // Save initial state
@@ -67,13 +87,19 @@ const DayOffCalendar = () => {
     });
   };
 
-  // --- HELPER FUNCTION ---
+  // --- HELPER FUNCTIONS ---
   const getUsedDaysForYear = (username, year) => {
     return requests.filter(r => 
       r.username === username && 
       r.date.startsWith(String(year)) &&
       r.status !== 'rejected' 
     ).length;
+  };
+
+  // Helper to get display name safely
+  const getDisplayName = (username) => {
+    if (!username) return 'Unknown';
+    return users[username]?.displayName || username;
   };
 
   const login = () => {
@@ -206,13 +232,14 @@ const DayOffCalendar = () => {
       ...users,
       [newUser.username]: {
         password: newUser.password,
+        displayName: newUser.displayName || newUser.username, // Use username if display name blank
         isAdmin: newUser.isAdmin,
         allowance: newUser.isAdmin ? 0 : parseInt(newUser.allowance),
         used: 0
       }
     };
     saveUsers(updatedUsers);
-    setNewUser({ username: '', password: '', allowance: 10, isAdmin: false });
+    setNewUser({ username: '', displayName: '', password: '', allowance: 10, isAdmin: false });
   };
 
   const deleteUser = (username) => {
@@ -235,26 +262,28 @@ const DayOffCalendar = () => {
     setModal({ show: false, type: '', data: null });
   };
 
-  // --- NEW: Admin Password Reset Logic ---
   const performAdminPasswordReset = (targetUsername, newPassword) => {
-    if (!newPassword || newPassword.length < 4) {
-      // We handle this validation inside the Modal mostly, but safety check here
-      return;
-    }
+    if (!newPassword || newPassword.length < 4) return;
     const updatedUsers = {
       ...users,
       [targetUsername]: { ...users[targetUsername], password: newPassword }
     };
     saveUsers(updatedUsers);
-    setModal({ show: true, type: 'success', data: { message: `Password for ${targetUsername} has been updated.` } });
+    setModal({ show: true, type: 'success', data: { message: `Password for ${getDisplayName(targetUsername)} has been updated.` } });
   };
 
-  const updateUserAllowance = (username, newAllowance) => {
+  const updateUserProfile = (targetUsername, field, value) => {
     const updatedUsers = {
       ...users,
-      [username]: { ...users[username], allowance: parseInt(newAllowance) }
+      [targetUsername]: { ...users[targetUsername], [field]: value }
     };
     saveUsers(updatedUsers);
+  };
+
+  const updateMyDisplayName = () => {
+    if(!myDisplayName.trim()) return;
+    updateUserProfile(currentUser, 'displayName', myDisplayName);
+    setModal({ show: true, type: 'success', data: { message: 'Display Name updated successfully!' } });
   };
 
   const changePassword = () => {
@@ -351,10 +380,9 @@ const DayOffCalendar = () => {
 
   const Modal = () => {
     const [commentText, setCommentText] = useState('');
-    const [adminNewPass, setAdminNewPass] = useState(''); // State for admin reset input
+    const [adminNewPass, setAdminNewPass] = useState(''); 
     const commentsEndRef = useRef(null);
 
-    // Scroll to bottom of comments when modal opens or comments change
     useEffect(() => {
         if (modal.type === 'requestComments' && commentsEndRef.current) {
             commentsEndRef.current.scrollIntoView({ behavior: "smooth" });
@@ -431,11 +459,10 @@ const DayOffCalendar = () => {
             </>
           )}
 
-          {/* ADMIN RESET PASSWORD MODAL */}
           {modal.type === 'adminResetPassword' && (
             <>
               <p className="mb-4">
-                Enter a new password for user <strong>{modal.data.username}</strong>:
+                Enter a new password for user <strong>{getDisplayName(modal.data.username)}</strong>:
               </p>
               <input 
                 type="password" 
@@ -462,7 +489,6 @@ const DayOffCalendar = () => {
             </>
           )}
 
-          {/* COMMENTS MODAL */}
           {modal.type === 'requestComments' && currentRequest && (
             <div className="flex flex-col h-96">
                 <div className="mb-4 p-3 bg-gray-50 rounded border border-gray-200">
@@ -477,7 +503,7 @@ const DayOffCalendar = () => {
                         </span>
                     </div>
                     <div className="text-xs text-gray-500">
-                        Requested by {currentRequest.username} on {formatDateTime(currentRequest.requestedAt)}
+                        Requested by {getDisplayName(currentRequest.username)} on {formatDateTime(currentRequest.requestedAt)}
                     </div>
                 </div>
 
@@ -495,7 +521,7 @@ const DayOffCalendar = () => {
                                     : 'bg-white border border-gray-200 rounded-tl-none'
                             }`}>
                                 <p className="font-semibold text-xs mb-1 text-opacity-75">
-                                    {comment.author}
+                                    {getDisplayName(comment.author)}
                                 </p>
                                 <p>{comment.text}</p>
                             </div>
@@ -532,7 +558,7 @@ const DayOffCalendar = () => {
           {modal.type === 'confirmDeleteUser' && (
             <>
               <p className="mb-6">
-                Are you sure you want to delete user <strong>{modal.data.username}</strong>?
+                Are you sure you want to delete user <strong>{getDisplayName(modal.data.username)}</strong>?
                 <br />
                 <br />
                 <span className="text-sm text-red-600 font-bold">
@@ -652,7 +678,7 @@ const DayOffCalendar = () => {
                   Day Off Calendar
                 </h1>
                 <p className="text-gray-600 mt-1">
-                  Logged in as: <span className="font-semibold">{currentUser}</span>
+                  Logged in as: <span className="font-semibold">{getDisplayName(currentUser)}</span>
                   {isAdmin && <span className="ml-2 text-indigo-600">(Admin)</span>}
                 </p>
                 {!isAdmin && (
@@ -698,7 +724,6 @@ const DayOffCalendar = () => {
                         Your request for <strong>{notif.date}</strong> has been{' '}
                         <strong>{notif.status}</strong>
                       </p>
-                      {/* COMMENT BUTTON FOR NOTIFICATIONS */}
                       <button
                         onClick={() => setModal({ show: true, type: 'requestComments', data: { requestId: notif.id } })}
                         className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-full transition-colors"
@@ -726,7 +751,6 @@ const DayOffCalendar = () => {
                       <p className="text-sm text-gray-600">Awaiting approval</p>
                     </div>
                     <div className="flex items-center gap-2">
-                        {/* COMMENT BUTTON FOR USER PENDING */}
                         <button
                           onClick={() => setModal({ show: true, type: 'requestComments', data: { requestId: request.id } })}
                           className="p-2 text-gray-600 hover:bg-yellow-100 rounded-full transition-colors"
@@ -747,8 +771,33 @@ const DayOffCalendar = () => {
             </div>
           )}
 
-          <div className="mt-4">
-            <h3 className="text-lg font-semibold mb-2">Change Password</h3>
+          {/* PROFILE SETTINGS & PASSWORD CHANGE */}
+          <div className="mt-6 bg-gray-50 p-4 rounded-lg border border-gray-200">
+             <h3 className="text-lg font-semibold mb-3">Profile Settings</h3>
+             
+             {/* Change Display Name */}
+             <div className="mb-4">
+                <label className="block text-sm text-gray-600 mb-1">Display Name</label>
+                <div className="flex gap-2">
+                    <input 
+                        type="text" 
+                        value={myDisplayName}
+                        onChange={(e) => setMyDisplayName(e.target.value)}
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                    />
+                    <button 
+                        onClick={updateMyDisplayName}
+                        className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm flex items-center gap-2"
+                    >
+                        <Save className="w-4 h-4" /> Save
+                    </button>
+                </div>
+             </div>
+
+             <div className="border-t border-gray-200 my-4"></div>
+
+            {/* Change Password */}
+             <h4 className="text-sm font-semibold mb-2 text-gray-700">Change Password</h4>
             <div className="space-y-2">
               <input
                 type="password"
@@ -773,7 +822,7 @@ const DayOffCalendar = () => {
               />
               <button
                 onClick={changePassword}
-                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm"
+                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm w-full sm:w-auto"
               >
                 Update Password
               </button>
@@ -798,12 +847,11 @@ const DayOffCalendar = () => {
                     <div key={request.id} className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
                       <div className="flex items-center justify-between mb-2">
                         <div>
-                          <p className="font-semibold">{request.username}</p>
+                          <p className="font-semibold">{getDisplayName(request.username)} <span className="text-xs text-gray-500">({request.username})</span></p>
                           <p className="text-sm text-gray-600">Date: {request.date}</p>
                           <p className="text-xs text-gray-500">Requested: {formatDateTime(request.requestedAt)}</p>
                         </div>
                         <div className="flex gap-2 items-center">
-                          {/* COMMENT BUTTON FOR ADMIN PENDING */}
                           <button
                             onClick={() => setModal({ show: true, type: 'requestComments', data: { requestId: request.id } })}
                             className="p-2 text-gray-600 hover:bg-yellow-100 rounded-full transition-colors"
@@ -842,6 +890,13 @@ const DayOffCalendar = () => {
                     placeholder="Username"
                     value={newUser.username}
                     onChange={(e) => setNewUser({ ...newUser, username: e.target.value })}
+                    className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Display Name"
+                    value={newUser.displayName}
+                    onChange={(e) => setNewUser({ ...newUser, displayName: e.target.value })}
                     className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
                   <input
@@ -901,7 +956,7 @@ const DayOffCalendar = () => {
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex-1">
                           <p className="font-semibold">
-                            {username}
+                            {user.displayName} <span className="text-sm font-normal text-gray-500">({username})</span>
                             {user.isAdmin && <span className="ml-2 text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded">Admin</span>}
                           </p>
                           {!user.isAdmin && (
@@ -911,16 +966,24 @@ const DayOffCalendar = () => {
                           )}
                         </div>
                         <div className="flex items-center gap-2">
-                          {!user.isAdmin && (
-                            <input
-                              type="number"
-                              value={user.allowance}
-                              onChange={(e) => updateUserAllowance(username, e.target.value)}
-                              className="w-20 px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                            />
-                          )}
+                          <div className="flex flex-col gap-1 items-end">
+                              <input
+                                  type="text"
+                                  placeholder="Name"
+                                  value={user.displayName}
+                                  onChange={(e) => updateUserProfile(username, 'displayName', e.target.value)}
+                                  className="w-32 px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                              />
+                              {!user.isAdmin && (
+                                <input
+                                  type="number"
+                                  value={user.allowance}
+                                  onChange={(e) => updateUserAllowance(username, e.target.value)}
+                                  className="w-20 px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                />
+                              )}
+                          </div>
                           
-                          {/* NEW: RESET PASSWORD BUTTON */}
                           <button
                             onClick={() => setModal({ show: true, type: 'adminResetPassword', data: { username } })}
                             className="px-2 py-1 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition-colors text-sm flex items-center gap-1"
@@ -959,7 +1022,6 @@ const DayOffCalendar = () => {
                                         {req.status}
                                       </span>
                                       
-                                      {/* COMMENT BUTTON FOR ADMIN HISTORY */}
                                       <button
                                         onClick={() => setModal({ show: true, type: 'requestComments', data: { requestId: req.id } })}
                                         className="p-1 text-gray-500 hover:bg-gray-200 rounded-full transition-colors"
@@ -1066,7 +1128,7 @@ const DayOffCalendar = () => {
                             className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded font-medium"
                             onClick={(e) => e.stopPropagation()}
                           >
-                            {req.username}
+                            {getDisplayName(req.username)}
                           </div>
                         ))}
                         {pendingRequests.map(req => (
@@ -1075,7 +1137,7 @@ const DayOffCalendar = () => {
                             className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded font-medium"
                             onClick={(e) => e.stopPropagation()}
                           >
-                            {req.username} (Pending)
+                            {getDisplayName(req.username)} (Pending)
                           </div>
                         ))}
                       </div>
