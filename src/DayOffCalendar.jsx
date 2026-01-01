@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Calendar, Users, CheckCircle, XCircle, LogOut, Settings, X, MessageSquare, Send, Key, Edit2, Save } from 'lucide-react';
+import { Calendar, Users, CheckCircle, XCircle, LogOut, Settings, X, MessageSquare, Send, Key, Edit2, Save, Briefcase } from 'lucide-react';
 
 const DayOffCalendar = () => {
   const [currentUser, setCurrentUser] = useState(null);
@@ -10,20 +10,17 @@ const DayOffCalendar = () => {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [showAdmin, setShowAdmin] = useState(false);
   
-  // Updated newUser state to include displayName
   const [newUser, setNewUser] = useState({ username: '', displayName: '', password: '', allowance: 10, isAdmin: false });
   
   const [modal, setModal] = useState({ show: false, type: '', data: null });
   const [passwordChange, setPasswordChange] = useState({ current: '', new: '', confirm: '' });
   
-  // New state for changing own display name
   const [myDisplayName, setMyDisplayName] = useState('');
 
   useEffect(() => {
     loadData();
   }, []);
 
-  // When user logs in, initialize their display name input
   useEffect(() => {
     if (currentUser && users[currentUser]) {
       setMyDisplayName(users[currentUser].displayName || currentUser);
@@ -32,7 +29,6 @@ const DayOffCalendar = () => {
 
   const loadData = async () => {
     try {
-      // Fetch from backend
       const usersRes = await fetch('/api/storage/dayoff-users');
       const usersResult = await usersRes.json();
       
@@ -41,7 +37,6 @@ const DayOffCalendar = () => {
       
       if (usersResult && usersResult.value) {
         const loadedUsers = JSON.parse(usersResult.value);
-        // Data Migration: Ensure all users have a displayName
         Object.keys(loadedUsers).forEach(key => {
             if (!loadedUsers[key].displayName) {
                 loadedUsers[key].displayName = key;
@@ -53,7 +48,6 @@ const DayOffCalendar = () => {
           admin: { password: 'admin', displayName: 'Administrator', isAdmin: true, allowance: 0, used: 0 }
         };
         setUsers(initialUsers);
-        // Save initial state
         await fetch('/api/storage/dayoff-users', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -87,7 +81,6 @@ const DayOffCalendar = () => {
     });
   };
 
-  // --- HELPER FUNCTIONS ---
   const getUsedDaysForYear = (username, year) => {
     return requests.filter(r => 
       r.username === username && 
@@ -96,7 +89,6 @@ const DayOffCalendar = () => {
     ).length;
   };
 
-  // Helper to get display name safely
   const getDisplayName = (username) => {
     if (!username) return 'Unknown';
     return users[username]?.displayName || username;
@@ -159,13 +151,15 @@ const DayOffCalendar = () => {
     });
   };
 
-  const confirmRequestDay = () => {
+  // UPDATED: Now accepts isPTO parameter
+  const confirmRequestDay = (isPTO) => {
     const { date } = modal.data;
     const newRequest = {
       id: Date.now(),
       username: currentUser,
       date: date,
       status: 'pending',
+      usePTO: isPTO, // Save the PTO choice
       requestedAt: new Date().toISOString(),
       comments: []
     };
@@ -232,7 +226,7 @@ const DayOffCalendar = () => {
       ...users,
       [newUser.username]: {
         password: newUser.password,
-        displayName: newUser.displayName || newUser.username, // Use username if display name blank
+        displayName: newUser.displayName || newUser.username,
         isAdmin: newUser.isAdmin,
         allowance: newUser.isAdmin ? 0 : parseInt(newUser.allowance),
         used: 0
@@ -380,7 +374,9 @@ const DayOffCalendar = () => {
 
   const Modal = () => {
     const [commentText, setCommentText] = useState('');
-    const [adminNewPass, setAdminNewPass] = useState(''); 
+    const [adminNewPass, setAdminNewPass] = useState('');
+    // NEW: Local state for checkbox
+    const [isPTO, setIsPTO] = useState(false);
     const commentsEndRef = useRef(null);
 
     useEffect(() => {
@@ -415,11 +411,26 @@ const DayOffCalendar = () => {
 
           {modal.type === 'requestDay' && (
             <>
-              <p className="mb-6">
+              <p className="mb-4">
                 Do you want to request <strong>{modal.data.formattedDate}</strong> off?
                 <br />
                 <span className="text-sm text-gray-600">This will be sent to an admin for approval.</span>
               </p>
+              
+              {/* NEW: PTO CHECKBOX */}
+              <div className="mb-6 flex items-center gap-2 p-3 bg-indigo-50 rounded-lg border border-indigo-100">
+                <input 
+                    type="checkbox" 
+                    id="usePto" 
+                    checked={isPTO} 
+                    onChange={(e) => setIsPTO(e.target.checked)}
+                    className="w-5 h-5 text-indigo-600 rounded focus:ring-indigo-500 cursor-pointer"
+                />
+                <label htmlFor="usePto" className="cursor-pointer font-medium text-gray-700 select-none">
+                    Use Paid Time Off (PTO)
+                </label>
+              </div>
+
               <div className="flex gap-2 justify-end">
                 <button
                   onClick={() => setModal({ show: false, type: '', data: null })}
@@ -428,7 +439,7 @@ const DayOffCalendar = () => {
                   Cancel
                 </button>
                 <button
-                  onClick={confirmRequestDay}
+                  onClick={() => confirmRequestDay(isPTO)}
                   className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
                 >
                   Request Day Off
@@ -492,18 +503,27 @@ const DayOffCalendar = () => {
           {modal.type === 'requestComments' && currentRequest && (
             <div className="flex flex-col h-96">
                 <div className="mb-4 p-3 bg-gray-50 rounded border border-gray-200">
-                    <div className="flex justify-between items-center mb-1">
-                        <span className="font-bold">{currentRequest.date}</span>
-                        <span className={`text-xs px-2 py-1 rounded capitalize ${
-                            currentRequest.status === 'approved' ? 'bg-green-100 text-green-800' :
-                            currentRequest.status === 'rejected' ? 'bg-red-100 text-red-800' :
-                            'bg-yellow-100 text-yellow-800'
-                        }`}>
-                            {currentRequest.status}
-                        </span>
-                    </div>
-                    <div className="text-xs text-gray-500">
-                        Requested by {getDisplayName(currentRequest.username)} on {formatDateTime(currentRequest.requestedAt)}
+                    <div className="flex justify-between items-start mb-2">
+                        <div>
+                            <span className="font-bold block text-lg">{currentRequest.date}</span>
+                            <span className="text-xs text-gray-500">
+                                Requested by {getDisplayName(currentRequest.username)} on {formatDateTime(currentRequest.requestedAt)}
+                            </span>
+                        </div>
+                        <div className="flex flex-col items-end gap-1">
+                            <span className={`text-xs px-2 py-1 rounded capitalize font-medium ${
+                                currentRequest.status === 'approved' ? 'bg-green-100 text-green-800' :
+                                currentRequest.status === 'rejected' ? 'bg-red-100 text-red-800' :
+                                'bg-yellow-100 text-yellow-800'
+                            }`}>
+                                {currentRequest.status}
+                            </span>
+                            {currentRequest.usePTO && (
+                                <span className="text-xs px-2 py-1 rounded bg-purple-100 text-purple-800 font-medium">
+                                    PTO
+                                </span>
+                            )}
+                        </div>
                     </div>
                 </div>
 
@@ -720,10 +740,9 @@ const DayOffCalendar = () => {
                   }`}
                 >
                   <div className="flex justify-between items-center">
-                      <p className="text-sm">
-                        Your request for <strong>{notif.date}</strong> has been{' '}
-                        <strong>{notif.status}</strong>
-                      </p>
+                      <div className="text-sm">
+                        Request for <strong>{notif.date}</strong> {notif.usePTO && <span className="text-xs bg-purple-100 text-purple-700 px-1 rounded ml-1">PTO</span>} has been <strong>{notif.status}</strong>
+                      </div>
                       <button
                         onClick={() => setModal({ show: true, type: 'requestComments', data: { requestId: notif.id } })}
                         className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-full transition-colors"
@@ -747,7 +766,7 @@ const DayOffCalendar = () => {
                     className="flex items-center justify-between p-3 bg-yellow-50 border border-yellow-200 rounded-lg"
                   >
                     <div>
-                      <p className="font-semibold">{request.date}</p>
+                      <p className="font-semibold">{request.date} {request.usePTO && <span className="text-xs bg-purple-100 text-purple-700 px-1 rounded ml-1">PTO</span>}</p>
                       <p className="text-sm text-gray-600">Awaiting approval</p>
                     </div>
                     <div className="flex items-center gap-2">
@@ -847,8 +866,14 @@ const DayOffCalendar = () => {
                     <div key={request.id} className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
                       <div className="flex items-center justify-between mb-2">
                         <div>
-                          <p className="font-semibold">{getDisplayName(request.username)} <span className="text-xs text-gray-500">({request.username})</span></p>
-                          <p className="text-sm text-gray-600">Date: {request.date}</p>
+                          <p className="font-semibold">
+                            {getDisplayName(request.username)} 
+                            <span className="text-xs text-gray-500 ml-1">({request.username})</span>
+                          </p>
+                          <p className="text-sm text-gray-600">
+                            Date: {request.date}
+                            {request.usePTO && <span className="text-xs bg-purple-100 text-purple-700 px-1 rounded ml-2 font-medium">PTO</span>}
+                          </p>
                           <p className="text-xs text-gray-500">Requested: {formatDateTime(request.requestedAt)}</p>
                         </div>
                         <div className="flex gap-2 items-center">
@@ -1014,7 +1039,10 @@ const DayOffCalendar = () => {
                                   req.status === 'approved' ? 'bg-green-50' : 'bg-red-50'
                                 }`}>
                                   <div className="flex justify-between items-center">
-                                    <span className="font-medium">{req.date}</span>
+                                    <span className="font-medium">
+                                        {req.date}
+                                        {req.usePTO && <span className="text-[10px] bg-purple-100 text-purple-700 px-1 rounded ml-2 font-bold uppercase">PTO</span>}
+                                    </span>
                                     <div className="flex items-center gap-2">
                                       <span className={`font-semibold ${
                                         req.status === 'approved' ? 'text-green-700' : 'text-red-700'
@@ -1125,19 +1153,21 @@ const DayOffCalendar = () => {
                         {approvedRequests.map(req => (
                           <div
                             key={req.id}
-                            className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded font-medium"
+                            className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded font-medium flex items-center justify-between"
                             onClick={(e) => e.stopPropagation()}
                           >
-                            {getDisplayName(req.username)}
+                            <span>{getDisplayName(req.username)}</span>
+                            {req.usePTO && <div className="w-2 h-2 rounded-full bg-purple-500 ml-1" title="PTO"></div>}
                           </div>
                         ))}
                         {pendingRequests.map(req => (
                           <div
                             key={req.id}
-                            className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded font-medium"
+                            className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded font-medium flex items-center justify-between"
                             onClick={(e) => e.stopPropagation()}
                           >
-                            {getDisplayName(req.username)} (Pending)
+                            <span>{getDisplayName(req.username)} (Pending)</span>
+                            {req.usePTO && <div className="w-2 h-2 rounded-full bg-purple-500 ml-1" title="PTO"></div>}
                           </div>
                         ))}
                       </div>
