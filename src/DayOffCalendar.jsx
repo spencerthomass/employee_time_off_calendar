@@ -151,7 +151,6 @@ const DayOffCalendar = () => {
     });
   };
 
-  // UPDATED: Now accepts isPTO parameter
   const confirmRequestDay = (isPTO) => {
     const { date } = modal.data;
     const newRequest = {
@@ -159,7 +158,7 @@ const DayOffCalendar = () => {
       username: currentUser,
       date: date,
       status: 'pending',
-      usePTO: isPTO, // Save the PTO choice
+      usePTO: isPTO, 
       requestedAt: new Date().toISOString(),
       comments: []
     };
@@ -274,6 +273,21 @@ const DayOffCalendar = () => {
     saveUsers(updatedUsers);
   };
 
+  // FIXED: Logic to safely handle empty string or NaN when editing allowance
+  const updateUserAllowance = (username, newAllowance) => {
+    // If empty string (cleared input), treat as 0 or 0-length string to prevent NaN error
+    const val = newAllowance === '' ? 0 : parseInt(newAllowance);
+    
+    // Ensure we always save a valid number
+    const safeVal = isNaN(val) ? 0 : val;
+
+    const updatedUsers = {
+      ...users,
+      [username]: { ...users[username], allowance: safeVal }
+    };
+    saveUsers(updatedUsers);
+  };
+
   const updateMyDisplayName = () => {
     if(!myDisplayName.trim()) return;
     updateUserProfile(currentUser, 'displayName', myDisplayName);
@@ -375,7 +389,6 @@ const DayOffCalendar = () => {
   const Modal = () => {
     const [commentText, setCommentText] = useState('');
     const [adminNewPass, setAdminNewPass] = useState('');
-    // NEW: Local state for checkbox
     const [isPTO, setIsPTO] = useState(false);
     const commentsEndRef = useRef(null);
 
@@ -417,7 +430,6 @@ const DayOffCalendar = () => {
                 <span className="text-sm text-gray-600">This will be sent to an admin for approval.</span>
               </p>
               
-              {/* NEW: PTO CHECKBOX */}
               <div className="mb-6 flex items-center gap-2 p-3 bg-indigo-50 rounded-lg border border-indigo-100">
                 <input 
                     type="checkbox" 
@@ -519,7 +531,7 @@ const DayOffCalendar = () => {
                                 {currentRequest.status}
                             </span>
                             {currentRequest.usePTO && (
-                                <span className="text-xs px-2 py-1 rounded bg-purple-100 text-purple-800 font-medium">
+                                <span className="text-xs px-2 py-1 rounded bg-purple-100 text-purple-700 font-medium">
                                     PTO
                                 </span>
                             )}
