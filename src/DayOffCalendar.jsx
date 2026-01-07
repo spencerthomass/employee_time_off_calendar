@@ -273,12 +273,8 @@ const DayOffCalendar = () => {
     saveUsers(updatedUsers);
   };
 
-  // FIXED: Logic to safely handle empty string or NaN when editing allowance
   const updateUserAllowance = (username, newAllowance) => {
-    // If empty string (cleared input), treat as 0 or 0-length string to prevent NaN error
     const val = newAllowance === '' ? 0 : parseInt(newAllowance);
-    
-    // Ensure we always save a valid number
     const safeVal = isNaN(val) ? 0 : val;
 
     const updatedUsers = {
@@ -987,7 +983,9 @@ const DayOffCalendar = () => {
             <div>
               <h3 className="text-xl font-semibold mb-3">Manage Users</h3>
               <div className="space-y-2">
-                {Object.entries(users).map(([username, user]) => (
+                {Object.entries(users)
+                  .sort(([, a], [, b]) => (a.displayName || '').localeCompare(b.displayName || ''))
+                  .map(([username, user]) => (
                   username !== 'admin' && (
                     <div key={username} className="p-3 bg-gray-50 border border-gray-200 rounded-lg">
                       <div className="flex items-center justify-between mb-2">
